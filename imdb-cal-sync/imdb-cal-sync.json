@@ -1,6 +1,6 @@
 {
-    "created": "1712779753104",
-    "updated": "1712779753104",
+    "created": "1712863276165",
+    "updated": "1712863276165",
     "name": "imdb-calc-sync",
     "description": "",
     "tags": [],
@@ -144,8 +144,8 @@
                                         "episodes": "{{step_2['episodes']}}"
                                     },
                                     "sourceCode": {
-                                        "code": "function findEventFor(events, episode) {\n    return events.find(ev => {\n        const idx = ev.description.indexOf(episode.eventDesc);\n        // console.log(`${ev.description} - ${episode.eventDesc} :`, idx)\n        return idx >= 0\n    })\n}\n\nfunction enrich(episode, event) {\n    return { \n        ...episode, \n        eventId: event.id,\n        eventStart: event.start.dateTime,\n        eventEnd: event.end.dateTime, \n    }\n}\n\nexport const code = async (inputs) => {\n  const { events, episodes } = inputs\n  console.log('Events', events);\n  const toAdd = episodes.filter(ep => !findEventFor(events, ep));\n  const toUpdate = episodes.map(ep => {\n    const ev = findEventFor(events, ep)\n    // console.log('ep', ep, 'vs', ev)\n    if (ev) {\n        return (ev.summary !== ep.eventTitle) ? enrich(ep, ev) : false\n    } else {\n        return false;\n    } \n  }).filter(ep => !!ep)\n  return {\n    toAdd,\n    toUpdate,\n  };\n};",
-                                        "packageJson": "\n      {\n        \"dependencies\": {\n        }\n      }"
+                                        "code": "import { isSameDay, parseISO, addMinutes, formatISO } from 'date-fns';\n\ninterface GCalEvent {\n    id: string;\n    end: {\n        dateTime: string;\n    }\n    start: {\n        dateTime: string;\n    }\n    summary: string;\n    description: string;\n}\n\ninterface Episode {\n  eid: number;\n  name: string;\n  aired: string;\n  number: number;\n  eventDesc: string;\n  eventTitle: string;\n  finaleType: string;\n  seasonNumber: number;\n}\n\ninterface Inputs {\n    events: GCalEvent[];\n    episodes: Episode[];\n}\n\nfunction isSameAirTime(aired: string, dateTime: string): boolean {\n    return isSameDay(parseISO(aired), parseISO(dateTime));\n}\n\nfunction findEventFor(events: GCalEvent[], episode: Episode) {\n    return events.find(ev => {\n        const idx = ev.description.indexOf(episode.eventDesc);\n        // console.log(`${ev.description} - ${episode.eventDesc} :`, idx)\n        return idx >= 0\n    })\n}\n\nfunction enrich(episode: Episode, event: GCalEvent) {\n    const aired = parseISO(episode.aired)\n    return { \n        ...episode, \n        eventId: event.id,\n        eventStart: formatISO(aired),\n        eventEnd: formatISO(addMinutes(aired, 30)), \n    }\n}\n\nfunction hasChanged(ev: GCalEvent, ep: Episode): boolean {\n    return (ev.summary !== ep.eventTitle) || !isSameAirTime(ep.aired, ev.start.dateTime);\n}\n\nexport const code = async (inputs: Inputs) => {\n  const { events, episodes } = inputs\n  console.log('Events', events);\n  const toAdd = episodes.filter(ep => !findEventFor(events, ep));\n  const toUpdate = episodes.map(ep => {\n    const ev = findEventFor(events, ep)\n    console.log('ep', ep, 'vs', ev)\n    if (ev) {\n        return hasChanged(ev, ep) ? enrich(ep, ev) : false\n    } else {\n        return false;\n    } \n  }).filter(ep => !!ep)\n  return {\n    toAdd,\n    toUpdate,\n  };\n};",
+                                        "packageJson": "{\n  \"dependencies\": {\n    \"date-fns\": \"3.6.0\"\n  }\n}"
                                     },
                                     "inputUiInfo": {},
                                     "errorHandlingOptions": {
