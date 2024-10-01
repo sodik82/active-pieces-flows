@@ -1,258 +1,258 @@
 {
-    "created": "1712863276165",
-    "updated": "1712863276165",
-    "name": "imdb-calc-sync",
-    "description": "",
-    "tags": [],
-    "pieces": [
-        "@activepieces/piece-schedule",
-        "@activepieces/piece-google-sheets",
-        "act-piece-simple-secret",
-        "@activepieces/piece-google-calendar"
-    ],
-    "template": {
-        "displayName": "imdb-calc-sync",
-        "trigger": {
-            "name": "trigger",
+  "created": "1727814299447",
+  "updated": "1727814299447",
+  "name": "imdb-calc-sync",
+  "description": "",
+  "tags": [],
+  "pieces": [
+    "@activepieces/piece-schedule",
+    "@activepieces/piece-google-sheets",
+    "act-piece-simple-secret",
+    "@activepieces/piece-google-calendar"
+  ],
+  "template": {
+    "displayName": "imdb-calc-sync",
+    "trigger": {
+      "name": "trigger",
+      "valid": true,
+      "displayName": "Every Week",
+      "type": "PIECE_TRIGGER",
+      "settings": {
+        "pieceName": "@activepieces/piece-schedule",
+        "pieceVersion": "0.1.5",
+        "pieceType": "OFFICIAL",
+        "packageType": "REGISTRY",
+        "input": {
+          "timezone": "UTC",
+          "day_of_the_week": 1,
+          "hour_of_the_day": 6
+        },
+        "inputUiInfo": {},
+        "triggerName": "every_week"
+      },
+      "nextAction": {
+        "name": "step_1",
+        "type": "PIECE",
+        "valid": true,
+        "settings": {
+          "input": {
+            "auth": "{{connections['google-sheets']}}",
+            "sheet_id": 1006221980,
+            "matchCase": false,
+            "columnName": "H",
+            "startingRow": "2",
+            "numberOfRows": "100",
+            "spreadsheet_id": "1SlSjF1HiGeg6u6nT5PByhtRdCLrm6RHV0ZsDbFUVQEQ",
+            "include_team_drives": false
+          },
+          "pieceName": "@activepieces/piece-google-sheets",
+          "pieceType": "OFFICIAL",
+          "actionName": "find_rows",
+          "inputUiInfo": {},
+          "packageType": "REGISTRY",
+          "pieceVersion": "0.9.5",
+          "errorHandlingOptions": {
+            "retryOnFailure": {
+              "value": false
+            },
+            "continueOnFailure": {
+              "value": false
+            }
+          }
+        },
+        "nextAction": {
+          "name": "step_9",
+          "type": "PIECE",
+          "valid": true,
+          "settings": {
+            "input": {
+              "auth": "{{connections['tvdb-secret']}}"
+            },
+            "pieceName": "act-piece-simple-secret",
+            "pieceType": "CUSTOM",
+            "actionName": "getSecret",
+            "inputUiInfo": {},
+            "packageType": "REGISTRY",
+            "pieceVersion": "0.1.1",
+            "errorHandlingOptions": {
+              "retryOnFailure": {
+                "value": false
+              },
+              "continueOnFailure": {
+                "value": false
+              }
+            }
+          },
+          "nextAction": {
+            "name": "step_2",
+            "type": "CODE",
             "valid": true,
-            "displayName": "Every Week",
-            "type": "PIECE_TRIGGER",
             "settings": {
-                "pieceName": "@activepieces/piece-schedule",
-                "pieceVersion": "0.1.5",
-                "pieceType": "OFFICIAL",
-                "packageType": "REGISTRY",
-                "triggerName": "every_week",
-                "input": {
-                    "timezone": "UTC",
-                    "day_of_the_week": 1,
-                    "hour_of_the_day": 6
+              "input": {
+                "rows": "{{step_1}}",
+                "apiKey": "{{step_9}}"
+              },
+              "sourceCode": {
+                "code": "import axios from \"axios\";\nimport { subDays, parseISO, compareAsc } from \"date-fns\";\n\nconst logs = [];\n\nfunction log(...args) {\n  const formattedArgs = args.map((arg) => {\n    if (typeof arg === \"object\") {\n      return JSON.stringify(arg, null, 2);\n    } else {\n      return arg;\n    }\n  });\n\n  // const joinedArgs = formattedArgs.join(\" \");\n  logs.push(args);\n}\n\nfunction retrieveToken(apikey) {\n  // Define the API endpoint\n  const url = 'https://api4.thetvdb.com/v4/login';\n\n  // Create the request payload\n  const payload = {\n    apikey,\n  };\n\n  // Make the POST request\n  return axios\n    .post(url, payload)\n    .then((response) => {\n      const accessToken = response.data.data.token;\n      console.log(`Access token acquired?: ${!!accessToken}`);\n      return accessToken;\n    })\n    .catch((error) => {\n      console.error(`Error: ${error.message}`);\n    });\n}\n\nconst TYPE_SERIES = \"TV Series\";\nconst TYPE_MINIS = \"TV Mini Series\";\nconst TYPE_MOVIE = \"Movie\";\n\nfunction retrieveDetails(ctx, type, imdbId) {\n  switch(type) {\n    case TYPE_SERIES:\n    case TYPE_MINIS:\n      return retrieveShow(ctx, imdbId);\n    case TYPE_MOVIE:\n      return retrieveMovie(ctx, imdbId);\n  }\n}\n\nfunction mapEpisode(episode, serieName) {\n  const { id, name, aired, seasonNumber, number, finaleType } = episode\n  return {\n    eid: id,\n    name,\n    eventTitle: `${serieName} (S${seasonNumber} E${number}): ${name}`,\n    eventDesc: `eid:${id}`,\n    aired,\n    seasonNumber,\n    number,\n    finaleType\n  }\n}\n\nasync function retrieveMovie(ctx, imdbId) {\n  const config = {\n    headers: { Authorization: `Bearer ${ctx.token}` }\n  };\n  const resp = await axios.get(`https://api4.thetvdb.com/v4/search/remoteid/${imdbId}`, config)\n  console.log('Retrieved movies ', JSON.stringify(resp.data))\n  const record = resp.data.data.find(el => !!el.movie).movie;\n  const detailResp = await axios.get(`https://api4.thetvdb.com/v4/movies/${record.id}/extended?short=true`, config)\n  console.log('Movie ', JSON.stringify(detailResp.data))\n  const { data } = detailResp.data \n  const { name, id, first_release } = data;\n  const eid = `m${id}`\n  const movie = {\n    type: TYPE_MOVIE,\n    id: data.id,\n    episodes: [{\n        eid,\n        name: name,\n        eventTitle: `${name}`,\n        eventDesc: `eid:${eid}`,\n        // fake \"series\" structure to make rest works\n        seasonNumber: 1,\n        aired: first_release && first_release.date,\n    }]\n  }\n  return movie;\n}\n\nasync function retrieveShow(ctx, imdbId) {\n  const config = {\n    headers: { Authorization: `Bearer ${ctx.token}` }\n  };\n  log('Retrieve show', imdbId);\n  const resp = await axios.get(`https://api4.thetvdb.com/v4/search/remoteid/${imdbId}`, config)\n  log('Retrieved ', JSON.stringify(resp.data))\n  const record = resp.data.data.find(el => !!el.series).series;\n  const seriesResp = await axios.get(`https://api4.thetvdb.com/v4/series/${record.id}/episodes/official/eng`, config)\n  log('Shows ', JSON.stringify(seriesResp.data))\n  const { data } = seriesResp.data \n  const show = {\n    type: TYPE_SERIES,\n    id: data.id, \n    name: data.name, \n    firstAired: data.firstAired, \n    lastAired: data.lastAired, \n    nextAired: data.nextAired,\n    episodes: data.episodes.map(e => mapEpisode(e, data.name)) \n  }\n  return show;\n}\n\nfunction isOlder(dateStr: string, limit: any) {\n    if (!dateStr) {\n        return false;\n    }\n    const dt = parseISO(dateStr);\n    return compareAsc(dt, limit) > 0;\n}\n\nfunction filterEpisodes(episodes, timeRef) {\n    return episodes.filter(e => isOlder(e.aired, timeRef) && e.seasonNumber > 0);\n}\n\nfunction filterDetails(details, timeRef) {\n    return details\n        .map( d => ({ ...d, episodes: filterEpisodes(d.episodes, timeRef)}))\n        .filter(d => d.episodes.length > 0)\n        .flatMap(d => d.episodes)\n}\n\n\nexport const code = async (inputs) => {\n    const {rows, apiKey} = inputs;\n    log('inputs', inputs);\n    const token = await retrieveToken(apiKey);\n    const ctx = {\n        token\n    };\n    const details = [];\n    for(let i=0; i < rows.length; i++) {\n        const {I: type, B: imdbId} = rows[i].values;\n        const detail = await retrieveDetails(ctx, type, imdbId);\n        if (detail) {\n            details.push(detail);\n        }\n    }\n\n    // prepare inputs for next steps\n    const today = new Date();\n    const sevenDaysAgo = subDays(today, 6);\n\n    return {\n      minDate: sevenDaysAgo.toISOString(),\n      episodes: filterDetails(details, sevenDaysAgo),\n      logs,\n    }\n};\n",
+                "packageJson": "{\n  \"dependencies\": {\n    \"axios\": \"1.6.8\",\n    \"date-fns\": \"3.6.0\"\n  }\n}"
+              },
+              "inputUiInfo": {},
+              "errorHandlingOptions": {
+                "retryOnFailure": {
+                  "value": false
                 },
-                "inputUiInfo": {}
+                "continueOnFailure": {
+                  "value": false
+                }
+              }
             },
             "nextAction": {
-                "name": "step_1",
-                "type": "PIECE",
+              "name": "step_3",
+              "type": "PIECE",
+              "valid": true,
+              "settings": {
+                "input": {
+                  "auth": "{{connections['google-calendar']}}",
+                  "start_date": "{{step_2['minDate']}}",
+                  "calendar_id": "77afb225167dc817e46f4caeabeb92266b8f75dddada877401dfb5fc8333acd8@group.calendar.google.com",
+                  "event_types": [
+                    "default"
+                  ]
+                },
+                "pieceName": "@activepieces/piece-google-calendar",
+                "pieceType": "OFFICIAL",
+                "actionName": "google_calendar_get_events",
+                "inputUiInfo": {},
+                "packageType": "REGISTRY",
+                "pieceVersion": "0.5.5",
+                "errorHandlingOptions": {
+                  "retryOnFailure": {
+                    "value": false
+                  },
+                  "continueOnFailure": {
+                    "value": false
+                  }
+                }
+              },
+              "nextAction": {
+                "name": "step_6",
+                "type": "CODE",
                 "valid": true,
                 "settings": {
-                    "input": {
-                        "auth": "{{connections['google-sheets']}}",
-                        "sheet_id": 1006221980,
-                        "matchCase": false,
-                        "columnName": "H",
-                        "startingRow": "2",
-                        "numberOfRows": "100",
-                        "spreadsheet_id": "1SlSjF1HiGeg6u6nT5PByhtRdCLrm6RHV0ZsDbFUVQEQ",
-                        "include_team_drives": false
+                  "input": {
+                    "events": "{{step_3['body']['items']}}",
+                    "episodes": "{{step_2['episodes']}}"
+                  },
+                  "sourceCode": {
+                    "code": "import { isSameDay, parseISO, addMinutes, formatISO } from 'date-fns';\n\ninterface GCalEvent {\n    id: string;\n    end: {\n        dateTime: string;\n    }\n    start: {\n        dateTime: string;\n    }\n    summary: string;\n    description: string;\n}\n\ninterface Episode {\n  eid: number;\n  name: string;\n  aired: string;\n  number: number;\n  eventDesc: string;\n  eventTitle: string;\n  finaleType: string;\n  seasonNumber: number;\n}\n\ninterface Inputs {\n    events: GCalEvent[];\n    episodes: Episode[];\n}\n\nfunction isSameAirTime(aired: string, dateTime: string): boolean {\n    return isSameDay(parseISO(aired), parseISO(dateTime));\n}\n\nfunction findEventFor(events: GCalEvent[], episode: Episode) {\n    return events.find(ev => {\n        const idx = ev.description.indexOf(episode.eventDesc);\n        // console.log(`${ev.description} - ${episode.eventDesc} :`, idx)\n        return idx >= 0\n    })\n}\n\nfunction enrich(episode: Episode, event: GCalEvent) {\n    const aired = parseISO(episode.aired)\n    return { \n        ...episode, \n        eventId: event.id,\n        eventStart: formatISO(aired),\n        eventEnd: formatISO(addMinutes(aired, 30)), \n    }\n}\n\nfunction hasChanged(ev: GCalEvent, ep: Episode): boolean {\n    return (ev.summary !== ep.eventTitle) || !isSameAirTime(ep.aired, ev.start.dateTime);\n}\n\nexport const code = async (inputs: Inputs) => {\n  const { events, episodes } = inputs\n  console.log('Events', events);\n  const toAdd = episodes.filter(ep => !findEventFor(events, ep));\n  const toUpdate = episodes.map(ep => {\n    const ev = findEventFor(events, ep)\n    console.log('ep', ep, 'vs', ev)\n    if (ev) {\n        return hasChanged(ev, ep) ? enrich(ep, ev) : false\n    } else {\n        return false;\n    } \n  }).filter(ep => !!ep)\n  return {\n    toAdd,\n    toUpdate,\n  };\n};",
+                    "packageJson": "{\n  \"dependencies\": {\n    \"date-fns\": \"3.6.0\"\n  }\n}"
+                  },
+                  "inputUiInfo": {},
+                  "errorHandlingOptions": {
+                    "retryOnFailure": {
+                      "value": false
                     },
-                    "pieceName": "@activepieces/piece-google-sheets",
-                    "pieceType": "OFFICIAL",
-                    "actionName": "find_rows",
-                    "inputUiInfo": {},
-                    "packageType": "REGISTRY",
-                    "pieceVersion": "0.9.4",
-                    "errorHandlingOptions": {
-                        "retryOnFailure": {
-                            "value": false
-                        },
-                        "continueOnFailure": {
-                            "value": false
-                        }
+                    "continueOnFailure": {
+                      "value": false
                     }
+                  }
                 },
                 "nextAction": {
-                    "name": "step_9",
+                  "name": "step_4",
+                  "type": "LOOP_ON_ITEMS",
+                  "valid": true,
+                  "settings": {
+                    "items": "{{step_6['toAdd']}}",
+                    "inputUiInfo": {}
+                  },
+                  "nextAction": {
+                    "name": "step_7",
+                    "type": "LOOP_ON_ITEMS",
+                    "valid": true,
+                    "settings": {
+                      "items": "{{step_6['toUpdate']}}",
+                      "inputUiInfo": {}
+                    },
+                    "displayName": "Loop on Items",
+                    "firstLoopAction": {
+                      "name": "step_8",
+                      "type": "PIECE",
+                      "valid": true,
+                      "settings": {
+                        "input": {
+                          "auth": "{{connections['google-calendar']}}",
+                          "title": "{{step_7['item']['eventTitle']}}",
+                          "eventId": "{{step_7['item']['eventId']}}",
+                          "calendar_id": "77afb225167dc817e46f4caeabeb92266b8f75dddada877401dfb5fc8333acd8@group.calendar.google.com",
+                          "end_date_time": "{{step_7['item']['eventEnd']}}",
+                          "start_date_time": "{{step_7['item']['eventStart']}}"
+                        },
+                        "pieceName": "@activepieces/piece-google-calendar",
+                        "pieceType": "OFFICIAL",
+                        "actionName": "update_event",
+                        "inputUiInfo": {},
+                        "packageType": "REGISTRY",
+                        "pieceVersion": "0.5.5",
+                        "errorHandlingOptions": {
+                          "retryOnFailure": {
+                            "value": false
+                          },
+                          "continueOnFailure": {
+                            "value": false
+                          }
+                        }
+                      },
+                      "displayName": "Update Event"
+                    }
+                  },
+                  "displayName": "Loop on Items",
+                  "firstLoopAction": {
+                    "name": "step_5",
                     "type": "PIECE",
                     "valid": true,
                     "settings": {
-                        "input": {
-                            "auth": "{{connections['tvdb-secret']}}"
+                      "input": {
+                        "auth": "{{connections['google-calendar']}}",
+                        "title": "{{step_4['item']['eventTitle']}}",
+                        "attendees": [],
+                        "calendar_id": "77afb225167dc817e46f4caeabeb92266b8f75dddada877401dfb5fc8333acd8@group.calendar.google.com",
+                        "description": "{{step_4['item']['eventDesc']}}",
+                        "start_date_time": "{{step_4['item']['aired']}}",
+                        "guests_can_modify": false,
+                        "send_notifications": "none",
+                        "guests_can_invite_others": false,
+                        "guests_can_see_other_guests": false
+                      },
+                      "pieceName": "@activepieces/piece-google-calendar",
+                      "pieceType": "OFFICIAL",
+                      "actionName": "create_google_calendar_event",
+                      "inputUiInfo": {},
+                      "packageType": "REGISTRY",
+                      "pieceVersion": "0.5.5",
+                      "errorHandlingOptions": {
+                        "retryOnFailure": {
+                          "value": false
                         },
-                        "pieceName": "act-piece-simple-secret",
-                        "pieceType": "CUSTOM",
-                        "actionName": "getSecret",
-                        "inputUiInfo": {},
-                        "packageType": "REGISTRY",
-                        "pieceVersion": "0.1.1",
-                        "errorHandlingOptions": {
-                            "retryOnFailure": {
-                                "value": false
-                            },
-                            "continueOnFailure": {
-                                "value": false
-                            }
+                        "continueOnFailure": {
+                          "value": false
                         }
+                      }
                     },
-                    "nextAction": {
-                        "name": "step_2",
-                        "type": "CODE",
-                        "valid": true,
-                        "settings": {
-                            "input": {
-                                "rows": "{{step_1}}",
-                                "apiKey": "{{step_9}}"
-                            },
-                            "sourceCode": {
-                                "code": "import axios from \"axios\";\nimport { subDays, parseISO, compareAsc } from \"date-fns\";\n\nfunction retrieveToken(apikey) {\n  // Define the API endpoint\n  const url = 'https://api4.thetvdb.com/v4/login';\n\n  // Create the request payload\n  const payload = {\n    apikey,\n  };\n\n  // Make the POST request\n  return axios\n    .post(url, payload)\n    .then((response) => {\n      const accessToken = response.data.data.token;\n      console.log(`Access token acquired?: ${!!accessToken}`);\n      return accessToken;\n    })\n    .catch((error) => {\n      console.error(`Error: ${error.message}`);\n    });\n}\n\nconst TYPE_SERIES = \"TV Series\";\nconst TYPE_MINIS = \"TV Mini Series\";\nconst TYPE_MOVIE = \"Movie\";\n\nfunction retrieveDetails(ctx, type, imdbId) {\n  switch(type) {\n    case TYPE_SERIES:\n    case TYPE_MINIS:\n      return retrieveShow(ctx, imdbId);\n    case TYPE_MOVIE:\n      return retrieveMovie(ctx, imdbId);\n  }\n}\n\nfunction mapEpisode(episode, serieName) {\n  const { id, name, aired, seasonNumber, number, finaleType } = episode\n  return {\n    eid: id,\n    name,\n    eventTitle: `${serieName} (S${seasonNumber} E${number}): ${name}`,\n    eventDesc: `eid:${id}`,\n    aired,\n    seasonNumber,\n    number,\n    finaleType\n  }\n}\n\nasync function retrieveMovie(ctx, imdbId) {\n  const config = {\n    headers: { Authorization: `Bearer ${ctx.token}` }\n  };\n  const resp = await axios.get(`https://api4.thetvdb.com/v4/search/remoteid/${imdbId}`, config)\n  console.log('Retrieved movies ', JSON.stringify(resp.data))\n  const record = resp.data.data.find(el => !!el.movie).movie;\n  const detailResp = await axios.get(`https://api4.thetvdb.com/v4/movies/${record.id}/extended?short=true`, config)\n  console.log('Movie ', JSON.stringify(detailResp.data))\n  const { data } = detailResp.data \n  const { name, id, first_release } = data;\n  const eid = `m${id}`\n  const movie = {\n    type: TYPE_MOVIE,\n    id: data.id,\n    episodes: [{\n        eid,\n        name: name,\n        eventTitle: `${name}`,\n        eventDesc: `eid:${eid}`,\n        // fake \"series\" structure to make rest works\n        seasonNumber: 1,\n        aired: first_release && first_release.date,\n    }]\n  }\n  return movie;\n}\n\nasync function retrieveShow(ctx, imdbId) {\n  const config = {\n    headers: { Authorization: `Bearer ${ctx.token}` }\n  };\n  const resp = await axios.get(`https://api4.thetvdb.com/v4/search/remoteid/${imdbId}`, config)\n  console.log('Retrieved ', JSON.stringify(resp.data))\n  const record = resp.data.data.find(el => !!el.series).series;\n  const seriesResp = await axios.get(`https://api4.thetvdb.com/v4/series/${record.id}/episodes/official/eng`, config)\n  console.log('Shows ', JSON.stringify(seriesResp.data))\n  const { data } = seriesResp.data \n  const show = {\n    type: TYPE_SERIES,\n    id: data.id, \n    name: data.name, \n    firstAired: data.firstAired, \n    lastAired: data.lastAired, \n    nextAired: data.nextAired,\n    episodes: data.episodes.map(e => mapEpisode(e, data.name)) \n  }\n  return show;\n}\n\nfunction isOlder(dateStr: string, limit: any) {\n    if (!dateStr) {\n        return false;\n    }\n    const dt = parseISO(dateStr);\n    return compareAsc(dt, limit) > 0;\n}\n\nfunction filterEpisodes(episodes, timeRef) {\n    return episodes.filter(e => isOlder(e.aired, timeRef) && e.seasonNumber > 0);\n}\n\nfunction filterDetails(details, timeRef) {\n    return details\n        .map( d => ({ ...d, episodes: filterEpisodes(d.episodes, timeRef)}))\n        .filter(d => d.episodes.length > 0)\n        .flatMap(d => d.episodes)\n}\n\n\nexport const code = async (inputs) => {\n    const {rows, apiKey} = inputs;\n    const token = await retrieveToken(apiKey);\n    const ctx = {\n        token\n    };\n    const details = [];\n    for(let i=0; i < rows.length; i++) {\n        const {H: type, B: imdbId} = rows[i].values;\n        const detail = await retrieveDetails(ctx, type, imdbId);\n        if (detail) {\n            details.push(detail);\n        }\n    }\n\n    // prepare inputs for next steps\n    const today = new Date();\n    const sevenDaysAgo = subDays(today, 6);\n\n    return {\n      minDate: sevenDaysAgo.toISOString(),\n      episodes: filterDetails(details, sevenDaysAgo),\n    }\n};\n",
-                                "packageJson": "{\n  \"dependencies\": {\n    \"axios\": \"1.6.8\",\n    \"date-fns\": \"3.6.0\"\n  }\n}"
-                            },
-                            "inputUiInfo": {},
-                            "errorHandlingOptions": {
-                                "retryOnFailure": {
-                                    "value": false
-                                },
-                                "continueOnFailure": {
-                                    "value": false
-                                }
-                            }
-                        },
-                        "nextAction": {
-                            "name": "step_3",
-                            "type": "PIECE",
-                            "valid": true,
-                            "settings": {
-                                "input": {
-                                    "auth": "{{connections['google-calendar']}}",
-                                    "start_date": "{{step_2['minDate']}}",
-                                    "calendar_id": "77afb225167dc817e46f4caeabeb92266b8f75dddada877401dfb5fc8333acd8@group.calendar.google.com",
-                                    "event_types": [
-                                        "default"
-                                    ]
-                                },
-                                "pieceName": "@activepieces/piece-google-calendar",
-                                "pieceType": "OFFICIAL",
-                                "actionName": "google_calendar_get_events",
-                                "inputUiInfo": {},
-                                "packageType": "REGISTRY",
-                                "pieceVersion": "0.5.3",
-                                "errorHandlingOptions": {
-                                    "retryOnFailure": {
-                                        "value": false
-                                    },
-                                    "continueOnFailure": {
-                                        "value": false
-                                    }
-                                }
-                            },
-                            "nextAction": {
-                                "name": "step_6",
-                                "type": "CODE",
-                                "valid": true,
-                                "settings": {
-                                    "input": {
-                                        "events": "{{step_3['body']['items']}}",
-                                        "episodes": "{{step_2['episodes']}}"
-                                    },
-                                    "sourceCode": {
-                                        "code": "import { isSameDay, parseISO, addMinutes, formatISO } from 'date-fns';\n\ninterface GCalEvent {\n    id: string;\n    end: {\n        dateTime: string;\n    }\n    start: {\n        dateTime: string;\n    }\n    summary: string;\n    description: string;\n}\n\ninterface Episode {\n  eid: number;\n  name: string;\n  aired: string;\n  number: number;\n  eventDesc: string;\n  eventTitle: string;\n  finaleType: string;\n  seasonNumber: number;\n}\n\ninterface Inputs {\n    events: GCalEvent[];\n    episodes: Episode[];\n}\n\nfunction isSameAirTime(aired: string, dateTime: string): boolean {\n    return isSameDay(parseISO(aired), parseISO(dateTime));\n}\n\nfunction findEventFor(events: GCalEvent[], episode: Episode) {\n    return events.find(ev => {\n        const idx = ev.description.indexOf(episode.eventDesc);\n        // console.log(`${ev.description} - ${episode.eventDesc} :`, idx)\n        return idx >= 0\n    })\n}\n\nfunction enrich(episode: Episode, event: GCalEvent) {\n    const aired = parseISO(episode.aired)\n    return { \n        ...episode, \n        eventId: event.id,\n        eventStart: formatISO(aired),\n        eventEnd: formatISO(addMinutes(aired, 30)), \n    }\n}\n\nfunction hasChanged(ev: GCalEvent, ep: Episode): boolean {\n    return (ev.summary !== ep.eventTitle) || !isSameAirTime(ep.aired, ev.start.dateTime);\n}\n\nexport const code = async (inputs: Inputs) => {\n  const { events, episodes } = inputs\n  console.log('Events', events);\n  const toAdd = episodes.filter(ep => !findEventFor(events, ep));\n  const toUpdate = episodes.map(ep => {\n    const ev = findEventFor(events, ep)\n    console.log('ep', ep, 'vs', ev)\n    if (ev) {\n        return hasChanged(ev, ep) ? enrich(ep, ev) : false\n    } else {\n        return false;\n    } \n  }).filter(ep => !!ep)\n  return {\n    toAdd,\n    toUpdate,\n  };\n};",
-                                        "packageJson": "{\n  \"dependencies\": {\n    \"date-fns\": \"3.6.0\"\n  }\n}"
-                                    },
-                                    "inputUiInfo": {},
-                                    "errorHandlingOptions": {
-                                        "retryOnFailure": {
-                                            "value": false
-                                        },
-                                        "continueOnFailure": {
-                                            "value": false
-                                        }
-                                    }
-                                },
-                                "nextAction": {
-                                    "name": "step_4",
-                                    "type": "LOOP_ON_ITEMS",
-                                    "valid": true,
-                                    "settings": {
-                                        "items": "{{step_6['toAdd']}}",
-                                        "inputUiInfo": {}
-                                    },
-                                    "nextAction": {
-                                        "name": "step_7",
-                                        "type": "LOOP_ON_ITEMS",
-                                        "valid": true,
-                                        "settings": {
-                                            "items": "{{step_6['toUpdate']}}",
-                                            "inputUiInfo": {}
-                                        },
-                                        "displayName": "Loop on Items",
-                                        "firstLoopAction": {
-                                            "name": "step_8",
-                                            "type": "PIECE",
-                                            "valid": true,
-                                            "settings": {
-                                                "input": {
-                                                    "auth": "{{connections['google-calendar']}}",
-                                                    "title": "{{step_7['item']['eventTitle']}}",
-                                                    "eventId": "{{step_7['item']['eventId']}}",
-                                                    "calendar_id": "77afb225167dc817e46f4caeabeb92266b8f75dddada877401dfb5fc8333acd8@group.calendar.google.com",
-                                                    "end_date_time": "{{step_7['item']['eventEnd']}}",
-                                                    "start_date_time": "{{step_7['item']['eventStart']}}"
-                                                },
-                                                "pieceName": "@activepieces/piece-google-calendar",
-                                                "pieceType": "OFFICIAL",
-                                                "actionName": "update_event",
-                                                "inputUiInfo": {},
-                                                "packageType": "REGISTRY",
-                                                "pieceVersion": "0.5.3",
-                                                "errorHandlingOptions": {
-                                                    "retryOnFailure": {
-                                                        "value": false
-                                                    },
-                                                    "continueOnFailure": {
-                                                        "value": false
-                                                    }
-                                                }
-                                            },
-                                            "displayName": "Update Event"
-                                        }
-                                    },
-                                    "displayName": "Loop on Items",
-                                    "firstLoopAction": {
-                                        "name": "step_5",
-                                        "type": "PIECE",
-                                        "valid": true,
-                                        "settings": {
-                                            "input": {
-                                                "auth": "{{connections['google-calendar']}}",
-                                                "title": "{{step_4['item']['eventTitle']}}",
-                                                "attendees": [],
-                                                "calendar_id": "77afb225167dc817e46f4caeabeb92266b8f75dddada877401dfb5fc8333acd8@group.calendar.google.com",
-                                                "description": "{{step_4['item']['eventDesc']}}",
-                                                "start_date_time": "{{step_4['item']['aired']}}",
-                                                "guests_can_modify": false,
-                                                "send_notifications": "none",
-                                                "guests_can_invite_others": false,
-                                                "guests_can_see_other_guests": false
-                                            },
-                                            "pieceName": "@activepieces/piece-google-calendar",
-                                            "pieceType": "OFFICIAL",
-                                            "actionName": "create_google_calendar_event",
-                                            "inputUiInfo": {},
-                                            "packageType": "REGISTRY",
-                                            "pieceVersion": "0.5.3",
-                                            "errorHandlingOptions": {
-                                                "retryOnFailure": {
-                                                    "value": false
-                                                },
-                                                "continueOnFailure": {
-                                                    "value": false
-                                                }
-                                            }
-                                        },
-                                        "displayName": "Create Event"
-                                    }
-                                },
-                                "displayName": "Deduplicate"
-                            },
-                            "displayName": "Get all Events"
-                        },
-                        "displayName": "Code"
-                    },
-                    "displayName": "Get Secret"
+                    "displayName": "Create Event"
+                  }
                 },
-                "displayName": "Find Rows"
-            }
+                "displayName": "Deduplicate"
+              },
+              "displayName": "Get all Events"
+            },
+            "displayName": "Code"
+          },
+          "displayName": "Get Secret"
         },
-        "valid": true
+        "displayName": "Find Rows"
+      }
     },
-    "blogUrl": ""
+    "valid": true
+  },
+  "blogUrl": ""
 }
